@@ -5,12 +5,11 @@ import time
 import zipfile
 import threading
 import requests
-from urllib.parse import urlparse, urlencode
+from urllib.parse import urlparse
 from flask import Flask, render_template, request, jsonify, send_file
 
 app = Flask(__name__)
 
-# Store download jobs in memory
 jobs = {}
 
 HEADERS = {
@@ -20,21 +19,19 @@ HEADERS = {
     "Accept-Language": "en-US,en;q=0.9",
 }
 
+
 def extract_album_info(url):
-    """Extract subdomain and album ID from a Yupoo album URL."""
     parsed = urlparse(url)
-    # e.g. 0594tmall.x.yupoo.com
-    subdomain = parsed.hostname  # e.g. 0594tmall.x.yupoo.com
-    # Extract album ID from path like /albums/183703566
+    subdomain = parsed.hostname
     match = re.search(r'/albums/(\d+)', parsed.path)
     if not match:
-        raise ValueError("Could not extract album ID from URL. Make sure it's a direct album link like: https://store.x.yupoo.com/albums/123456")
+        raise ValueError("Could not extract album ID from URL. Make sure it is a direct album link like: https://store.x.yupoo.com/albums/123456")
     album_id = match.group(1)
     return subdomain, album_id
 
+
 def get_image_urls(subdomain, album_id, job_id):
-    """Fetch all image URLs from a Yupoo album using their API."""
-    base_url = f"https://{subdomain}"
+    base_url = "https://" + subdomain
     all_image_urls = []
     page = 1
     page_size = 30
@@ -43,8 +40,7 @@ def get_image_urls(subdomain, album_id, job_id):
     jobs[job_id]['message'] = 'Fetching album info...'
 
     while True:
-        # Yupoo API endpoint for album photos
-        api_url = f"{base_url}/api/albums/{album_id}/photos"
+        api_url = base_url + "/api/albums/" + album_id + "/photos"
         params = {
             "uid": "1",
             "page": page,
@@ -56,16 +52,14 @@ def get_image_urls(subdomain, album_id, job_id):
             resp.raise_for_status()
             data = resp.json()
         except requests.exceptions.JSONDecodeError:
-            # Fallback: try scraping the HTML page
             jobs[job_id]['message'] = 'API not available, trying HTML scraping...'
             return scrape_html_for_images(subdomain, album_id, job_id)
         except Exception as e:
-            raise Exception(f"Failed to fetch album data: {str(e)}")
+            raise Exception("Failed to fetch album data: " + str(e))
 
         photos = data.get('photos', data.get('data', {}).get('photos', []))
-        
+
         if not photos:
-            # Try alternative response structure
             if isinstance(data, list):
                 photos = data
             elif 'data' in data:
@@ -77,7 +71,6 @@ def get_image_urls(subdomain, album_id, job_id):
             break
 
         for photo in photos:
-            # Extract image URL from various possible fields
             img_url = (
                 photo.get('path') or
                 photo.get('url') or
@@ -86,50 +79,46 @@ def get_image_urls(subdomain, album_id, job_id):
                 photo.get('image_url')
             )
             if img_url:
-                # Make sure URL is absolute
                 if img_url.startswith('//'):
                     img_url = 'https:' + img_url
                 elif img_url.startswith('/'):
-                    img_url = f"https://{subdomain}" + img_url
+                    img_url = "https://" + subdomain + img_url
                 all_image_urls.append(img_url)
 
-        jobs[job_id]['message'] = f'Found {len(all_image_urls)} images so far...'
+        jobs[job_id]['message'] = 'Found ' + str(len(all_image_urls)) + ' images so far...'
 
-        # Check if there are more pages
         total = data.get('total', data.get('data', {}).get('total', 0))
         if not total or len(all_image_urls) >= total or len(photos) < page_size:
             break
         page += 1
-        time.sleep(0.3)  # Be polite
+        time.sleep(0.3)
 
     return all_image_urls
 
+
 def scrape_html_for_images(subdomain, album_id, job_id):
-    """Fallback: scrape the HTML page for image URLs."""
     from bs4 import BeautifulSoup
 
     all_urls = []
-    base_url = f"https://{subdomain}"
-    
+    base_url = "https://" + subdomain
+
     jobs[job_id]['message'] = 'Scraping album HTML page...'
 
     page = 1
     while True:
-        url = f"{base_url}/albums/{album_id}"
+        url = base_url + "/albums/" + album_id
         params = {"uid": "1", "page": page}
-        
+
         headers = dict(HEADERS)
         headers["Accept"] = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        
+
         resp = requests.get(url, params=params, headers=headers, timeout=20)
         resp.raise_for_status()
 
         soup = BeautifulSoup(resp.text, 'html.parser')
 
-        # Find all image tags or photo containers
         found = False
-        
-        # Method 1: Look for img tags with yupoo photo domains
+
         for img in soup.find_all('img'):
             src = img.get('src') or img.get('data-src') or img.get('data-original') or ''
             if 'yupoo.com' in src or 'photo' in src.lower():
@@ -139,10 +128,8 @@ def scrape_html_for_images(subdomain, album_id, job_id):
                     all_urls.append(src)
                     found = True
 
-        # Method 2: Look for photo links in JSON-like script tags
         for script in soup.find_all('script'):
             content = script.string or ''
-            # Find image URLs in JS
             urls_in_script = re.findall(r'https?://[^\s"\']+(?:jpg|jpeg|png|webp)', content, re.IGNORECASE)
             for u in urls_in_script:
                 if 'photo' in u.lower() or 'yupoo' in u.lower():
@@ -150,10 +137,9 @@ def scrape_html_for_images(subdomain, album_id, job_id):
                         all_urls.append(u)
                         found = True
 
-        jobs[job_id]['message'] = f'Scraped {len(all_urls)} images from page {page}...'
+        jobs[job_id]['message'] = 'Scraped ' + str(len(all_urls)) + ' images from page ' + str(page) + '...'
 
-        # Check for next page
-        next_btn = soup.find('a', string=re.compile(r'next|下一页', re.I))
+        next_btn = soup.find('a', string=re.compile(r'next', re.I))
         if not next_btn or not found:
             break
         page += 1
@@ -161,8 +147,8 @@ def scrape_html_for_images(subdomain, album_id, job_id):
 
     return all_urls
 
+
 def download_and_zip(job_id, subdomain, album_id, image_urls):
-    """Download all images and compress them into a ZIP in memory."""
     zip_buffer = io.BytesIO()
     total = len(image_urls)
     downloaded = 0
@@ -172,19 +158,18 @@ def download_and_zip(job_id, subdomain, album_id, image_urls):
     jobs[job_id]['total'] = total
 
     img_headers = dict(HEADERS)
-    img_headers['Referer'] = f"https://{subdomain}/"
+    img_headers['Referer'] = "https://" + subdomain + "/"
     img_headers['Accept'] = "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
 
     with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
         for i, url in enumerate(image_urls):
-            jobs[job_id]['message'] = f'Downloading image {i+1} of {total}...'
+            jobs[job_id]['message'] = 'Downloading image ' + str(i + 1) + ' of ' + str(total) + '...'
             jobs[job_id]['downloaded'] = downloaded
 
             try:
                 resp = requests.get(url, headers=img_headers, timeout=30)
                 resp.raise_for_status()
 
-                # Determine file extension
                 content_type = resp.headers.get('Content-Type', '')
                 ext = '.jpg'
                 if 'png' in content_type:
@@ -194,27 +179,27 @@ def download_and_zip(job_id, subdomain, album_id, image_urls):
                 elif 'gif' in content_type:
                     ext = '.gif'
                 else:
-                    # Try to get from URL
                     url_ext = re.search(r'\.(jpg|jpeg|png|webp|gif)(\?|$)', url, re.I)
                     if url_ext:
                         ext = '.' + url_ext.group(1).lower()
 
-                filename = f"image_{i+1:04d}{ext}"
+                filename = "image_" + str(i + 1).zfill(4) + ext
                 zf.writestr(filename, resp.content)
                 downloaded += 1
             except Exception as e:
                 failed += 1
-                print(f"Failed to download {url}: {e}")
+                print("Failed to download " + url + ": " + str(e))
 
-            time.sleep(0.1)  # Rate limiting
+            time.sleep(0.1)
 
     zip_buffer.seek(0)
     jobs[job_id]['status'] = 'done'
     jobs[job_id]['downloaded'] = downloaded
     jobs[job_id]['failed'] = failed
-    jobs[job_id]['message'] = f'Done! Downloaded {downloaded} images, {failed} failed.'
+    jobs[job_id]['message'] = 'Done! Downloaded ' + str(downloaded) + ' images, ' + str(failed) + ' failed.'
     jobs[job_id]['zip_data'] = zip_buffer.getvalue()
-    jobs[job_id]['zip_name'] = f"yupoo_album_{album_id}.zip"
+    jobs[job_id]['zip_name'] = 'yupoo_album_' + album_id + '.zip'
+
 
 def run_job(job_id, url):
     try:
@@ -226,19 +211,21 @@ def run_job(job_id, url):
 
         if not image_urls:
             jobs[job_id]['status'] = 'error'
-            jobs[job_id]['message'] = 'No images found in this album. Make sure the URL is a direct album link (not a category page).'
+            jobs[job_id]['message'] = 'No images found in this album. Make sure the URL is a direct album link and not a category page.'
             return
 
-        jobs[job_id]['message'] = f'Found {len(image_urls)} images. Starting download...'
+        jobs[job_id]['message'] = 'Found ' + str(len(image_urls)) + ' images. Starting download...'
         download_and_zip(job_id, subdomain, album_id, image_urls)
 
     except Exception as e:
         jobs[job_id]['status'] = 'error'
-        jobs[job_id]['message'] = f'Error: {str(e)}'
+        jobs[job_id]['message'] = 'Error: ' + str(e)
+
 
 @app.route('/')
 def index():
     return render_template('index.html')
+
 
 @app.route('/start', methods=['POST'])
 def start_download():
@@ -268,6 +255,7 @@ def start_download():
 
     return jsonify({'job_id': job_id})
 
+
 @app.route('/status/<job_id>')
 def get_status(job_id):
     job = jobs.get(job_id)
@@ -282,6 +270,7 @@ def get_status(job_id):
         'failed': job.get('failed', 0),
         'ready': job['status'] == 'done',
     })
+
 
 @app.route('/download/<job_id>')
 def download_zip(job_id):
@@ -299,41 +288,7 @@ def download_zip(job_id):
         download_name=zip_name
     )
 
+
 if __name__ == '__main__':
-    print("\n🖼️  Yupoo Album Downloader")
-    print("=" * 40)
-    print("Open your browser at: http://localhost:5000")
-    print("=" * 40 + "\n")
-    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-```
-
-(Render assigns a port automatically, so the app needs to read it from the environment.)
-
----
-
-### Step 5 — Sign up on Render
-
-Go to **https://render.com** → Sign up with your GitHub account (click "Sign up with GitHub" — easiest way)
-
----
-
-### Step 6 — Deploy your app
-
-1. On Render's dashboard, click **"New"** → **"Web Service"**
-2. Connect your GitHub account if prompted
-3. Find and select your `yupoo-downloader` repository
-4. Fill in the settings:
-   - **Name:** yupoo-downloader (or anything you like)
-   - **Runtime:** Python 3
-   - **Build Command:** `pip install -r requirements.txt`
-   - **Start Command:** `python app.py`
-5. Choose the **Free** plan
-6. Click **"Create Web Service"**
-
----
-
-### Step 7 — Wait ~2 minutes
-
-Render will build and deploy your app. When it's done, you'll see a URL at the top like:
-```
-https://yupoo-downloader.onrender.com
+    port = int(os.environ.get('PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
