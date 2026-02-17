@@ -304,4 +304,36 @@ if __name__ == '__main__':
     print("=" * 40)
     print("Open your browser at: http://localhost:5000")
     print("=" * 40 + "\n")
-    app.run(debug=False, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+```
+
+(Render assigns a port automatically, so the app needs to read it from the environment.)
+
+---
+
+### Step 5 — Sign up on Render
+
+Go to **https://render.com** → Sign up with your GitHub account (click "Sign up with GitHub" — easiest way)
+
+---
+
+### Step 6 — Deploy your app
+
+1. On Render's dashboard, click **"New"** → **"Web Service"**
+2. Connect your GitHub account if prompted
+3. Find and select your `yupoo-downloader` repository
+4. Fill in the settings:
+   - **Name:** yupoo-downloader (or anything you like)
+   - **Runtime:** Python 3
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python app.py`
+5. Choose the **Free** plan
+6. Click **"Create Web Service"**
+
+---
+
+### Step 7 — Wait ~2 minutes
+
+Render will build and deploy your app. When it's done, you'll see a URL at the top like:
+```
+https://yupoo-downloader.onrender.com
