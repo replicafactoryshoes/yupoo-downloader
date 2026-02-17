@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Yupoo Album Downloader</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3356;
+      --accent: #5b6cf9;
+      --accent-glow: rgba(91, 108, 249, 0.3);
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --text: #e2e8f0;
+      --muted: #64748b;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 640px;
+    }
+
+    .header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    .logo {
+      width: 64px;
+      height: 64px;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 30px;
+      box-shadow: 0 0 30px var(--accent-glow);
+    }
+
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #fff 40%, var(--accent));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      margin-bottom: 8px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 28px;
+      margin-bottom: 20px;
+    }
+
+    .input-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    input[type="text"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 13px 16px;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    input[type="text"]::placeholder {
+      color: var(--muted);
+    }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      padding: 13px 22px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    button:hover:not(:disabled) {
+      background: #6b7cf9;
+      box-shadow: 0 0 20px var(--accent-glow);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .hint span {
+      color: #94a3b8;
+    }
+
+    /* Progress */
+    .progress-card {
+      display: none;
+    }
+
+    .progress-card.visible {
+      display: block;
+    }
+
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .status-dot.running {
+      background: var(--accent);
+      animation: pulse 1.2s infinite;
+    }
+
+    .status-dot.done { background: var(--green); }
+    .status-dot.error { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-glow); }
+      50% { opacity: 0.7; box-shadow: 0 0 0 6px transparent; }
+    }
+
+    .status-message {
+      font-size: 14px;
+      color: var(--text);
+      flex: 1;
+    }
+
+    .progress-track {
+      background: var(--bg);
+      border-radius: 999px;
+      height: 8px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #8b5cf6);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .progress-fill.indeterminate {
+      width: 40%;
+      animation: indeterminate 1.4s infinite ease-in-out;
+    }
+
+    @keyframes indeterminate {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(350%); }
+    }
+
+    .progress-label {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .download-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--green), #16a34a);
+      border-radius: 10px;
+      padding: 15px;
+      font-size: 15px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .download-btn.visible {
+      display: flex;
+    }
+
+    .download-btn:hover {
+      background: linear-gradient(135deg, #16a34a, #15803d);
+      box-shadow: 0 0 25px rgba(34, 197, 94, 0.3);
+    }
+
+    .error-msg {
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 10px;
+      padding: 14px;
+      color: #fca5a5;
+      font-size: 13px;
+      display: none;
+      margin-top: 12px;
+    }
+
+    .error-msg.visible { display: block; }
+
+    .stats {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .stat {
+      flex: 1;
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .tips {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 20px;
+    }
+
+    .tips h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .tips ul {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .tips li {
+      font-size: 13px;
+      color: #94a3b8;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .tips li::before {
+      content: '→';
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    .check { color: var(--green); }
+    .cross { color: var(--red); }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">📦</div>
+    <h1>Yupoo Downloader</h1>
+    <p class="subtitle">Download all images from any Yupoo album as a ZIP file</p>
+  </div>
+
+  <div class="card">
+    <div class="input-group">
+      <input type="text" id="urlInput"
+        placeholder="https://store.x.yupoo.com/albums/123456789?uid=1"
+        autocomplete="off" autocorrect="off" spellcheck="false" />
+      <button id="startBtn" onclick="startDownload()">Download</button>
+    </div>
+    <p class="hint">
+      <span class="check">✓ Use album links</span> &nbsp;·&nbsp;
+      <span class="cross">✗ Don't use category/store links</span>
+    </p>
+  </div>
+
+  <div class="card progress-card" id="progressCard">
+    <div class="status-bar">
+      <div class="status-dot running" id="statusDot"></div>
+      <div class="status-message" id="statusMsg">Starting...</div>
+    </div>
+
+    <div class="progress-track">
+      <div class="progress-fill indeterminate" id="progressFill"></div>
+    </div>
+    <div class="progress-label" id="progressLabel"></div>
+
+    <div class="stats" id="statsRow" style="display:none">
+      <div class="stat">
+        <div class="stat-value" id="statDownloaded">0</div>
+        <div class="stat-label">Downloaded</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="statTotal">0</div>
+        <div class="stat-label">Total Images</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="statFailed">0</div>
+        <div class="stat-label">Failed</div>
+      </div>
+    </div>
+
+    <div class="error-msg" id="errorMsg"></div>
+
+    <button class="download-btn" id="downloadBtn">
+      ⬇️ Save ZIP to Computer
+    </button>
+  </div>
+
+  <div class="tips">
+    <h3>How to use</h3>
+    <ul>
+      <li>Go to a Yupoo store and open a specific product album</li>
+      <li>Copy the album URL from your browser (must contain <code>/albums/</code>)</li>
+      <li>Paste it above and click Download</li>
+      <li>Wait for all images to download, then save the ZIP</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  let currentJobId = null;
+  let pollInterval = null;
+
+  async function startDownload() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) {
+      alert('Please enter a Yupoo album URL');
+      return;
+    }
+
+    // Reset UI
+    clearInterval(pollInterval);
+    currentJobId = null;
+    document.getElementById('startBtn').disabled = true;
+    document.getElementById('progressCard').classList.add('visible');
+    document.getElementById('downloadBtn').classList.remove('visible');
+    document.getElementById('errorMsg').classList.remove('visible');
+    document.getElementById('statsRow').style.display = 'none';
+
+    const dot = document.getElementById('statusDot');
+    dot.className = 'status-dot running';
+
+    const fill = document.getElementById('progressFill');
+    fill.className = 'progress-fill indeterminate';
+    fill.style.width = '';
+
+    setStatus('Starting download job...');
+
+    try {
+      const res = await fetch('/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || 'Failed to start');
+        return;
+      }
+
+      currentJobId = data.job_id;
+      pollInterval = setInterval(pollStatus, 1200);
+      pollStatus();
+    } catch (e) {
+      showError('Could not connect to server. Make sure app.py is running.');
+      document.getElementById('startBtn').disabled = false;
+    }
+  }
+
+  async function pollStatus() {
+    if (!currentJobId) return;
+
+    try {
+      const res = await fetch(`/status/${currentJobId}`);
+      const data = await res.json();
+
+      setStatus(data.message);
+
+      if (data.total > 0) {
+        document.getElementById('statsRow').style.display = 'flex';
+        document.getElementById('statDownloaded').textContent = data.downloaded;
+        document.getElementById('statTotal').textContent = data.total;
+        document.getElementById('statFailed').textContent = data.failed;
+
+        const pct = Math.round((data.downloaded / data.total) * 100);
+        const fill = document.getElementById('progressFill');
+        fill.className = 'progress-fill';
+        fill.style.width = pct + '%';
+        document.getElementById('progressLabel').textContent = pct + '%';
+      }
+
+      if (data.status === 'done') {
+        clearInterval(pollInterval);
+        document.getElementById('statusDot').className = 'status-dot done';
+        document.getElementById('downloadBtn').classList.add('visible');
+        document.getElementById('downloadBtn').onclick = () => {
+          window.location.href = `/download/${currentJobId}`;
+        };
+        document.getElementById('startBtn').disabled = false;
+
+        const fill = document.getElementById('progressFill');
+        fill.className = 'progress-fill';
+        fill.style.width = '100%';
+        document.getElementById('progressLabel').textContent = '100%';
+      }
+
+      if (data.status === 'error') {
+        clearInterval(pollInterval);
+        showError(data.message);
+        document.getElementById('startBtn').disabled = false;
+      }
+    } catch(e) {
+      // ignore transient errors
+    }
+  }
+
+  function setStatus(msg) {
+    document.getElementById('statusMsg').textContent = msg;
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.classList.add('visible');
+    document.getElementById('statusDot').className = 'status-dot error';
+    setStatus('Failed');
+    const fill = document.getElementById('progressFill');
+    fill.className = 'progress-fill';
+    fill.style.width = '0%';
+  }
+
+  document.getElementById('urlInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') startDownload();
+  });
+</script>
+</body>
+</html>
