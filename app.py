@@ -1,6 +1,7 @@
 import os
 import re
 import io
+import json
 import time
 import zipfile
 import threading
@@ -10,16 +11,14 @@ from flask import Flask, render_template, request, jsonify, send_file
 from bs4 import BeautifulSoup
 
 app = Flask(__name__)
-
 jobs = {}
 
-HEADERS = {
+SESSION_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
     "Accept-Encoding": "gzip, deflate, br",
     "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
 }
 
 
@@ -28,153 +27,282 @@ def extract_album_info(url):
     subdomain = parsed.hostname
     match = re.search(r'/albums/(\d+)', parsed.path)
     if not match:
-        raise ValueError("Could not extract album ID. Use a direct album link like: https://store.x.yupoo.com/albums/123456")
+        raise ValueError("Could not find album ID in URL. Make sure the link contains /albums/")
     album_id = match.group(1)
     return subdomain, album_id
 
 
-def get_image_urls(subdomain, album_id, job_id):
-    all_image_urls = []
-    base_url = "https://" + subdomain
-    page = 1
-
-    jobs[job_id]['status'] = 'fetching'
-    jobs[job_id]['message'] = 'Fetching album page...'
-
+def make_session(subdomain):
     session = requests.Session()
-    session.headers.update(HEADERS)
-
-    # First visit the main store page to get cookies
+    session.headers.update(SESSION_HEADERS)
+    # Visit homepage first to get cookies
     try:
-        session.get(base_url, timeout=15)
-        time.sleep(1)
+        session.get("https://" + subdomain, timeout=15)
+        time.sleep(0.5)
     except Exception:
         pass
+    return session
 
-    while True:
-        url = base_url + "/albums/" + album_id
-        params = {"uid": "1", "page": page}
 
-        try:
-            resp = session.get(url, params=params, timeout=20)
-            resp.raise_for_status()
-        except Exception as e:
-            raise Exception("Failed to load album page: " + str(e))
+def extract_images_from_page(html, subdomain):
+    """Try every known method to extract image URLs from a Yupoo page."""
+    images = []
 
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        found_on_page = []
+    # ----------------------------------------------------------------
+    # Method 1: window.__INITIAL_STATE__ or similar embedded JSON blobs
+    # ----------------------------------------------------------------
+    json_patterns = [
+        r'window\.__INITIAL_STATE__\s*=\s*({.+?})(?:;|\n|</script>)',
+        r'window\.__STORE__\s*=\s*({.+?})(?:;|\n|</script>)',
+        r'window\.pageData\s*=\s*({.+?})(?:;|\n|</script>)',
+        r'var\s+pageData\s*=\s*({.+?})(?:;|\n|</script>)',
+    ]
+    for pattern in json_patterns:
+        match = re.search(pattern, html, re.DOTALL)
+        if match:
+            try:
+                data = json.loads(match.group(1))
+                found = find_image_urls_in_json(data)
+                images.extend([u for u in found if u not in images])
+            except Exception:
+                pass
 
-        # Method 1: look for image tags inside photo containers
-        for img in soup.find_all('img'):
-            src = (
-                img.get('src') or
-                img.get('data-src') or
-                img.get('data-original') or
-                img.get('data-lazy') or
-                ''
-            )
-            src = src.strip()
+    # ----------------------------------------------------------------
+    # Method 2: All JSON-like objects inside script tags
+    # ----------------------------------------------------------------
+    soup = BeautifulSoup(html, 'html.parser')
+    for script in soup.find_all('script'):
+        content = script.string or ''
+        if not content:
+            continue
+
+        # Look for any JSON array or object that might contain image data
+        # Find all quoted strings that look like yupoo image paths
+        raw_paths = re.findall(
+            r'"((?:[a-zA-Z0-9/_\-]+/)+[a-zA-Z0-9/_\-]+\.(?:jpg|jpeg|png|webp))"',
+            content, re.IGNORECASE
+        )
+        for path in raw_paths:
+            # Yupoo image paths look like: /xxx/xxx/filename.jpg
+            candidates = [
+                "https://photo.yupoo.com" + path,
+                "https://img.yupoo.com" + path,
+            ]
+            for c in candidates:
+                if c not in images:
+                    images.append(c)
+
+        # Direct full URLs in scripts
+        full_urls = re.findall(
+            r'https?://(?:photo|img)\.yupoo\.com/[^\s"\'<>\\]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>\\]*',
+            content, re.IGNORECASE
+        )
+        for u in full_urls:
+            u = u.rstrip('\\/')
+            if u not in images:
+                images.append(u)
+
+        # Protocol-relative URLs in scripts
+        rel_urls = re.findall(
+            r'//(?:photo|img)\.yupoo\.com/[^\s"\'<>\\]+\.(?:jpg|jpeg|png|webp)[^\s"\'<>\\]*',
+            content, re.IGNORECASE
+        )
+        for u in rel_urls:
+            full = 'https:' + u.rstrip('\\/')
+            if full not in images:
+                images.append(full)
+
+    # ----------------------------------------------------------------
+    # Method 3: img tags (works when JS rendering is not needed)
+    # ----------------------------------------------------------------
+    for img in soup.find_all('img'):
+        for attr in ['src', 'data-src', 'data-original', 'data-lazy', 'data-url']:
+            src = img.get(attr, '').strip()
             if not src:
                 continue
             if src.startswith('//'):
                 src = 'https:' + src
-            if ('photo.yupoo.com' in src or 'img.yupoo.com' in src) and src not in all_image_urls:
-                found_on_page.append(src)
+            if ('photo.yupoo.com' in src or 'img.yupoo.com' in src) and src not in images:
+                images.append(src)
 
-        # Method 2: look for URLs inside inline JSON / JS variables in script tags
-        for script in soup.find_all('script'):
-            content = script.string or ''
-            matches = re.findall(
-                r'(https?://(?:photo|img)\.yupoo\.com/[^\s"\'\\]+\.(?:jpg|jpeg|png|webp))',
-                content, re.IGNORECASE
-            )
-            for m in matches:
-                if m not in all_image_urls and m not in found_on_page:
-                    found_on_page.append(m)
+    # ----------------------------------------------------------------
+    # Method 4: Any URL in the raw HTML matching yupoo image CDN
+    # ----------------------------------------------------------------
+    all_cdn = re.findall(
+        r'https?://(?:photo|img)\.yupoo\.com/[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)',
+        html, re.IGNORECASE
+    )
+    for u in all_cdn:
+        u = u.strip()
+        if u not in images:
+            images.append(u)
 
-            matches2 = re.findall(
-                r'(//(?:photo|img)\.yupoo\.com/[^\s"\'\\]+\.(?:jpg|jpeg|png|webp))',
-                content, re.IGNORECASE
-            )
-            for m in matches2:
-                full = 'https:' + m
-                if full not in all_image_urls and full not in found_on_page:
-                    found_on_page.append(full)
+    rel_cdn = re.findall(
+        r'//(?:photo|img)\.yupoo\.com/[^\s"\'<>]+\.(?:jpg|jpeg|png|webp)',
+        html, re.IGNORECASE
+    )
+    for u in rel_cdn:
+        full = 'https:' + u.strip()
+        if full not in images:
+            images.append(full)
 
-        all_image_urls.extend(found_on_page)
-        jobs[job_id]['message'] = 'Found ' + str(len(all_image_urls)) + ' images so far (page ' + str(page) + ')...'
+    return images
 
-        # Check if there is a next page
+
+def find_image_urls_in_json(obj, found=None):
+    """Recursively walk a JSON object and collect image URLs."""
+    if found is None:
+        found = []
+    if isinstance(obj, str):
+        if re.search(r'(?:photo|img)\.yupoo\.com', obj):
+            url = obj if obj.startswith('http') else 'https:' + obj
+            if url not in found:
+                found.append(url)
+        elif re.search(r'\.(?:jpg|jpeg|png|webp)$', obj, re.I) and '/' in obj:
+            for prefix in ['https://photo.yupoo.com', 'https://img.yupoo.com']:
+                candidate = prefix + (obj if obj.startswith('/') else '/' + obj)
+                if candidate not in found:
+                    found.append(candidate)
+    elif isinstance(obj, dict):
+        for v in obj.values():
+            find_image_urls_in_json(v, found)
+    elif isinstance(obj, list):
+        for item in obj:
+            find_image_urls_in_json(item, found)
+    return found
+
+
+def get_photo_ids_from_album(session, subdomain, album_id, job_id):
+    """Get all photo page URLs from the album listing."""
+    base_url = "https://" + subdomain
+    photo_links = []
+    page = 1
+
+    while True:
+        url = base_url + "/albums/" + album_id
+        params = {"uid": "1", "page": page}
+        try:
+            resp = session.get(url, params=params, timeout=20)
+            resp.raise_for_status()
+        except Exception as e:
+            raise Exception("Failed to load album: " + str(e))
+
+        soup = BeautifulSoup(resp.text, 'html.parser')
+
+        # Collect all links to individual photo pages
+        found_on_page = []
+        for a in soup.find_all('a', href=True):
+            href = a['href']
+            if '/photos/' in href:
+                if href.startswith('/'):
+                    href = base_url + href
+                elif not href.startswith('http'):
+                    href = base_url + '/' + href
+                if href not in photo_links:
+                    found_on_page.append(href)
+                    photo_links.append(href)
+
+        jobs[job_id]['message'] = 'Found ' + str(len(photo_links)) + ' photos so far (scanning page ' + str(page) + ')...'
+
+        # Detect next page
         has_next = False
-        next_link = soup.find('a', class_=re.compile(r'next', re.I))
-        if not next_link:
-            pager = soup.find(class_=re.compile(r'pag', re.I))
-            if pager:
-                links = pager.find_all('a', href=True)
-                for lnk in links:
-                    if str(page + 1) in lnk.get_text():
-                        has_next = True
-                        break
-
-        if next_link:
-            has_next = True
+        # Check for a "next" button/link
+        for a in soup.find_all('a', href=True):
+            text = a.get_text(strip=True).lower()
+            classes = ' '.join(a.get('class', []))
+            if 'next' in text or 'next' in classes.lower():
+                has_next = True
+                break
+        # Also check if there's a page number higher than current
+        page_nums = re.findall(r'[?&]page=(\d+)', resp.text)
+        if page_nums:
+            max_page = max(int(p) for p in page_nums)
+            if max_page > page:
+                has_next = True
 
         if not has_next or not found_on_page:
             break
 
         page += 1
-        time.sleep(0.8)
+        time.sleep(0.5)
 
-    # If we got nothing from HTML img tags, try fetching individual photo pages
-    if not all_image_urls:
-        jobs[job_id]['message'] = 'Trying photo detail pages...'
-        all_image_urls = get_images_from_photo_pages(session, subdomain, album_id, job_id)
-
-    return all_image_urls
+    return photo_links
 
 
-def get_images_from_photo_pages(session, subdomain, album_id, job_id):
-    all_image_urls = []
-    base_url = "https://" + subdomain
-    url = base_url + "/albums/" + album_id
-    params = {"uid": "1"}
-
+def get_image_from_photo_page(session, photo_url, subdomain):
+    """Fetch a single photo page and extract the full-size image URL."""
     try:
-        resp = session.get(url, params=params, timeout=20)
-        soup = BeautifulSoup(resp.text, 'html.parser')
+        resp = session.get(photo_url, timeout=15)
+        images = extract_images_from_page(resp.text, subdomain)
+        # Return the first (and usually only) image found
+        if images:
+            return images[0]
     except Exception:
+        pass
+    return None
+
+
+def get_all_image_urls(subdomain, album_id, job_id):
+    session = make_session(subdomain)
+    base_url = "https://" + subdomain
+
+    jobs[job_id]['status'] = 'fetching'
+    jobs[job_id]['message'] = 'Loading album page...'
+
+    # Step 1: Load the album page and try to extract images directly
+    album_url = base_url + "/albums/" + album_id
+    try:
+        resp = session.get(album_url, params={"uid": "1"}, timeout=20)
+        resp.raise_for_status()
+    except Exception as e:
+        raise Exception("Could not load the album page: " + str(e))
+
+    direct_images = extract_images_from_page(resp.text, subdomain)
+
+    if direct_images:
+        jobs[job_id]['message'] = 'Found ' + str(len(direct_images)) + ' images directly on album page!'
+        # Check if there are more pages
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        # Look for pagination to get more pages
+        page = 2
+        while True:
+            has_more = False
+            for a in soup.find_all('a', href=True):
+                if 'page=' + str(page) in a.get('href', '') or a.get_text(strip=True).lower() == 'next':
+                    has_more = True
+                    break
+            if not has_more:
+                break
+            try:
+                resp2 = session.get(album_url, params={"uid": "1", "page": page}, timeout=20)
+                more = extract_images_from_page(resp2.text, subdomain)
+                new = [u for u in more if u not in direct_images]
+                direct_images.extend(new)
+                jobs[job_id]['message'] = 'Found ' + str(len(direct_images)) + ' images (page ' + str(page) + ')...'
+                soup = BeautifulSoup(resp2.text, 'html.parser')
+                page += 1
+                time.sleep(0.5)
+            except Exception:
+                break
+        return direct_images
+
+    # Step 2: If no images found directly, get individual photo page URLs and scrape each
+    jobs[job_id]['message'] = 'Album uses dynamic loading. Collecting photo pages...'
+    photo_links = get_photo_ids_from_album(session, subdomain, album_id, job_id)
+
+    if not photo_links:
         return []
 
-    photo_links = []
-    for a in soup.find_all('a', href=True):
-        href = a['href']
-        if '/photos/' in href:
-            if href.startswith('/'):
-                href = base_url + href
-            if href not in photo_links:
-                photo_links.append(href)
+    all_images = []
+    total = len(photo_links)
+    for i, link in enumerate(photo_links):
+        jobs[job_id]['message'] = 'Extracting image ' + str(i + 1) + ' of ' + str(total) + '...'
+        img_url = get_image_from_photo_page(session, link, subdomain)
+        if img_url and img_url not in all_images:
+            all_images.append(img_url)
+        time.sleep(0.2)
 
-    jobs[job_id]['message'] = 'Found ' + str(len(photo_links)) + ' photo pages, extracting images...'
-
-    for i, photo_url in enumerate(photo_links):
-        jobs[job_id]['message'] = 'Extracting image ' + str(i + 1) + ' of ' + str(len(photo_links)) + '...'
-        try:
-            r = session.get(photo_url, timeout=15)
-            psoup = BeautifulSoup(r.text, 'html.parser')
-
-            for img in psoup.find_all('img'):
-                src = img.get('src') or img.get('data-src') or ''
-                if src.startswith('//'):
-                    src = 'https:' + src
-                if ('photo.yupoo.com' in src or 'img.yupoo.com' in src) and src not in all_image_urls:
-                    all_image_urls.append(src)
-                    break
-
-            time.sleep(0.3)
-        except Exception:
-            continue
-
-    return all_image_urls
+    return all_images
 
 
 def download_and_zip(job_id, subdomain, album_id, image_urls):
@@ -196,7 +324,6 @@ def download_and_zip(job_id, subdomain, album_id, image_urls):
         for i, url in enumerate(image_urls):
             jobs[job_id]['message'] = 'Downloading image ' + str(i + 1) + ' of ' + str(total) + '...'
             jobs[job_id]['downloaded'] = downloaded
-
             try:
                 resp = requests.get(url, headers=img_headers, timeout=30)
                 resp.raise_for_status()
@@ -219,7 +346,7 @@ def download_and_zip(job_id, subdomain, album_id, image_urls):
                 downloaded += 1
             except Exception as e:
                 failed += 1
-                print("Failed to download " + url + ": " + str(e))
+                print("Failed: " + url + " -> " + str(e))
 
             time.sleep(0.15)
 
@@ -238,11 +365,11 @@ def run_job(job_id, url):
         jobs[job_id]['album_id'] = album_id
         jobs[job_id]['subdomain'] = subdomain
 
-        image_urls = get_image_urls(subdomain, album_id, job_id)
+        image_urls = get_all_image_urls(subdomain, album_id, job_id)
 
         if not image_urls:
             jobs[job_id]['status'] = 'error'
-            jobs[job_id]['message'] = 'No images found. Make sure the URL is a direct album link (containing /albums/) and not a category or store page.'
+            jobs[job_id]['message'] = 'No images found. The album may be private, empty, or fully JavaScript-rendered. Try a different album link.'
             return
 
         jobs[job_id]['message'] = 'Found ' + str(len(image_urls)) + ' images. Starting download...'
@@ -262,10 +389,8 @@ def index():
 def start_download():
     data = request.json
     url = data.get('url', '').strip()
-
     if not url:
         return jsonify({'error': 'No URL provided'}), 400
-
     if 'yupoo.com/albums/' not in url:
         return jsonify({'error': 'Please provide a valid Yupoo album URL (must contain /albums/)'}), 400
 
@@ -292,7 +417,6 @@ def get_status(job_id):
     job = jobs.get(job_id)
     if not job:
         return jsonify({'error': 'Job not found'}), 404
-
     return jsonify({
         'status': job['status'],
         'message': job['message'],
@@ -308,15 +432,11 @@ def download_zip(job_id):
     job = jobs.get(job_id)
     if not job or not job.get('zip_data'):
         return jsonify({'error': 'ZIP not ready'}), 404
-
-    zip_data = job['zip_data']
-    zip_name = job.get('zip_name', 'yupoo_album.zip')
-
     return send_file(
-        io.BytesIO(zip_data),
+        io.BytesIO(job['zip_data']),
         mimetype='application/zip',
         as_attachment=True,
-        download_name=zip_name
+        download_name=job.get('zip_name', 'yupoo_album.zip')
     )
 
 
