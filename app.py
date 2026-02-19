@@ -37,43 +37,85 @@ def extract_album_info(url):
     return subdomain, album_id
 
 
-def is_big_image(url):
-    """Return True only if this URL is a 'big' quality Yupoo image."""
-    # Yupoo big images have 'big' in the filename or path segment
-    # e.g. photo.yupoo.com/user/albumid/big_filename.jpg
-    #      photo.yupoo.com/user/albumid/filename_big.jpg
-    #      photo.yupoo.com/.../.../big/filename.jpg
+# Yupoo size tokens ranked from lowest to highest quality.
+# We always prefer the highest ranked token we can find.
+SIZE_RANK = {
+    'sq':      0,
+    'mini':    1,
+    'thumb':   2,
+    'small':   3,
+    'normal':  4,
+    'medium':  5,
+    'big':     6,
+    'large':   7,
+    'huge':    8,
+    'original':9,
+}
+
+
+def get_size_token(url):
+    """Return the size token found in a Yupoo URL, or None."""
     filename = url.split('/')[-1].split('?')[0].lower()
-    path = url.lower()
-    return 'big' in filename or '/big/' in path or '_big.' in path
+    path_lower = url.lower()
+    for token in SIZE_RANK:
+        # Match token as a whole word in filename or as a path segment
+        if re.search(r'(?:^|_|/)' + token + r'(?:_|\.|/|$)', filename):
+            return token
+        if '/' + token + '/' in path_lower:
+            return token
+    return None
 
 
-def upgrade_to_big(url):
-    """Try to convert a non-big URL to its 'big' equivalent."""
-    # Common Yupoo pattern: replace size prefix like 'small', 'medium', 'thumb' with 'big'
-    for size in ['small', 'medium', 'thumb', 'normal', 'mini', 'sq']:
-        if size in url.lower():
-            upgraded = re.sub(re.escape(size), 'big', url, flags=re.IGNORECASE)
-            return upgraded
-    # Also try inserting 'big' before the filename if no size found
-    return url
+def get_photo_base_id(url):
+    """
+    Extract a stable base ID for a photo so all size variants map to the same key.
+    Yupoo URLs look like:
+      https://photo.yupoo.com/username/albumhash/photoname_big.jpg
+      https://photo.yupoo.com/username/albumhash/photoname_small.jpg
+    The base ID is everything except the size token and extension.
+    """
+    filename = url.split('/')[-1].split('?')[0]  # e.g. abc123_big.jpg
+    path_parts = url.split('/')                   # split full path
+
+    # Remove extension
+    name_no_ext = re.sub(r'\.(jpg|jpeg|png|webp|gif)$', '', filename, flags=re.I)
+
+    # Remove known size tokens from the filename
+    for token in SIZE_RANK:
+        name_no_ext = re.sub(r'(?:^|_)' + token + r'(?:_|$)', '_', name_no_ext, flags=re.I)
+    name_no_ext = name_no_ext.strip('_')
+
+    # Build key from the directory path + cleaned name
+    # path_parts example: ['https:', '', 'photo.yupoo.com', 'user', 'albumhash', 'file_big.jpg']
+    directory = '/'.join(path_parts[:-1])  # everything before the filename
+    return directory + '/' + name_no_ext
 
 
-def filter_and_upgrade_urls(urls):
-    """From a list of image URLs, keep only 'big' ones.
-    If a URL is not 'big', try to upgrade it. Return deduplicated list."""
-    result = []
-    seen = set()
+def pick_best_urls(urls):
+    """
+    Group all collected URLs by their base photo ID.
+    For each photo, keep only the single highest-resolution URL.
+    Returns a deduplicated list, one URL per unique photo, in original order.
+    """
+    # photo_id -> (best_url, best_rank)
+    best = {}
+    order = []  # preserve first-seen order of photo IDs
+
     for url in urls:
-        if is_big_image(url):
-            if url not in seen:
-                result.append(url)
-                seen.add(url)
+        url = url.split('?')[0]  # strip query params
+        base_id = get_photo_base_id(url)
+        token = get_size_token(url)
+        rank = SIZE_RANK.get(token, 5)  # default to medium rank if no token found
+
+        if base_id not in best:
+            best[base_id] = (url, rank)
+            order.append(base_id)
         else:
-            upgraded = upgrade_to_big(url)
-            if upgraded not in seen:
-                result.append(upgraded)
-                seen.add(upgraded)
+            _, existing_rank = best[base_id]
+            if rank > existing_rank:
+                best[base_id] = (url, rank)
+
+    result = [best[b][0] for b in order]
     return result
 
 
@@ -156,9 +198,9 @@ def try_api_endpoints(session, subdomain, album_id, job_id):
             break
 
         if found_any and all_urls:
-            return filter_and_upgrade_urls(all_urls)
+            return pick_best_urls(all_urls)
 
-    return filter_and_upgrade_urls(all_urls)
+    return pick_best_urls(all_urls)
 
 
 def scrape_html_for_images(session, subdomain, album_id, job_id):
@@ -227,7 +269,7 @@ def scrape_html_for_images(session, subdomain, album_id, job_id):
         page += 1
         time.sleep(0.5)
 
-    return filter_and_upgrade_urls(all_urls)
+    return pick_best_urls(all_urls)
 
 
 def verify_images(session, subdomain, candidate_urls, job_id):
