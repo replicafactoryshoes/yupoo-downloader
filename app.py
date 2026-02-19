@@ -37,6 +37,46 @@ def extract_album_info(url):
     return subdomain, album_id
 
 
+def is_big_image(url):
+    """Return True only if this URL is a 'big' quality Yupoo image."""
+    # Yupoo big images have 'big' in the filename or path segment
+    # e.g. photo.yupoo.com/user/albumid/big_filename.jpg
+    #      photo.yupoo.com/user/albumid/filename_big.jpg
+    #      photo.yupoo.com/.../.../big/filename.jpg
+    filename = url.split('/')[-1].split('?')[0].lower()
+    path = url.lower()
+    return 'big' in filename or '/big/' in path or '_big.' in path
+
+
+def upgrade_to_big(url):
+    """Try to convert a non-big URL to its 'big' equivalent."""
+    # Common Yupoo pattern: replace size prefix like 'small', 'medium', 'thumb' with 'big'
+    for size in ['small', 'medium', 'thumb', 'normal', 'mini', 'sq']:
+        if size in url.lower():
+            upgraded = re.sub(re.escape(size), 'big', url, flags=re.IGNORECASE)
+            return upgraded
+    # Also try inserting 'big' before the filename if no size found
+    return url
+
+
+def filter_and_upgrade_urls(urls):
+    """From a list of image URLs, keep only 'big' ones.
+    If a URL is not 'big', try to upgrade it. Return deduplicated list."""
+    result = []
+    seen = set()
+    for url in urls:
+        if is_big_image(url):
+            if url not in seen:
+                result.append(url)
+                seen.add(url)
+        else:
+            upgraded = upgrade_to_big(url)
+            if upgraded not in seen:
+                result.append(upgraded)
+                seen.add(upgraded)
+    return result
+
+
 def find_image_urls_in_json(obj, found=None):
     if found is None:
         found = []
@@ -116,9 +156,9 @@ def try_api_endpoints(session, subdomain, album_id, job_id):
             break
 
         if found_any and all_urls:
-            return all_urls
+            return filter_and_upgrade_urls(all_urls)
 
-    return all_urls
+    return filter_and_upgrade_urls(all_urls)
 
 
 def scrape_html_for_images(session, subdomain, album_id, job_id):
@@ -187,7 +227,7 @@ def scrape_html_for_images(session, subdomain, album_id, job_id):
         page += 1
         time.sleep(0.5)
 
-    return all_urls
+    return filter_and_upgrade_urls(all_urls)
 
 
 def verify_images(session, subdomain, candidate_urls, job_id):
