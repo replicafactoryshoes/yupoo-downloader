@@ -206,6 +206,17 @@
     .job-msg { font-size: 12px; color: var(--muted); flex: 1; }
     .job-stats { font-size: 12px; color: var(--muted); }
 
+    .retry-btn {
+      background: none;
+      border: 1px solid var(--yellow);
+      color: var(--yellow);
+      border-radius: 7px;
+      padding: 7px 14px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      white-space: nowrap; margin-left: 8px;
+    }
+    .retry-btn:hover { background: rgba(245,158,11,0.15); box-shadow: none; }
+
     .dl-btn {
       background: linear-gradient(135deg, var(--green), #16a34a);
       color: #fff; border: none; border-radius: 7px;
@@ -398,6 +409,7 @@
       '<div class="job-footer">' +
         '<div class="job-msg" id="msg-' + cardId + '">Queued</div>' +
         '<div class="job-stats" id="stats-' + cardId + '"></div>' +
+        '<button class="retry-btn" id="retry-' + cardId + '" style="display:none" onclick="retryJob(\'' + cardId + '\')">&#8635; Retry</button>' +
         '<button class="dl-btn" id="dl-' + cardId + '" style="display:none" onclick="triggerDownload(\'' + cardId + '\')">&#11015; Save ZIP</button>' +
       '</div>' +
       '<div class="err-text" id="err-' + cardId + '" style="display:none"></div>';
@@ -426,6 +438,8 @@
     const fill = document.getElementById('fill-' + cardId);
     fill.className = 'progress-fill';
     fill.style.width = '0%';
+    const retryBtn = document.getElementById('retry-' + cardId);
+    if (retryBtn) retryBtn.style.display = 'inline-block';
     updateSummary();
   }
 
@@ -480,13 +494,46 @@
       setJobDot(cardId, 'done');
       fill.className = 'progress-fill';
       fill.style.width = '100%';
-      document.getElementById('stats-' + cardId).textContent = data.downloaded + ' images';
+      document.getElementById('stats-' + cardId).textContent = data.downloaded + ' images' + (data.failed > 0 ? ', ' + data.failed + ' failed' : '');
       const dlBtn = document.getElementById('dl-' + cardId);
       dlBtn.style.display = 'inline-block';
+      // Show retry button if any images failed
+      if (data.failed > 0) {
+        const retryBtn = document.getElementById('retry-' + cardId);
+        if (retryBtn) retryBtn.style.display = 'inline-block';
+      }
     }
 
     if (data.status === 'error') {
       setJobError(cardId, data.message);
+      // Show retry on error too
+      const retryBtn = document.getElementById('retry-' + cardId);
+      if (retryBtn) retryBtn.style.display = 'inline-block';
+    }
+  }
+
+  async function retryJob(cardId) {
+    const job = jobs[cardId];
+    if (!job || !job.jobId) return;
+
+    // Reset card visually
+    job.status = 'running';
+    setJobDot(cardId, 'running');
+    document.getElementById('retry-' + cardId).style.display = 'none';
+    document.getElementById('err-' + cardId).style.display = 'none';
+    document.getElementById('msg-' + cardId).textContent = 'Retrying failed images...';
+    const fill = document.getElementById('fill-' + cardId);
+    fill.className = 'progress-fill indeterminate';
+    fill.style.width = '';
+
+    try {
+      await fetch('/retry/' + job.jobId, { method: 'POST' });
+      // Resume polling
+      if (!pollTimer) {
+        pollTimer = setInterval(pollAll, 1200);
+      }
+    } catch(e) {
+      document.getElementById('msg-' + cardId).textContent = 'Retry failed — could not reach server.';
     }
   }
 
