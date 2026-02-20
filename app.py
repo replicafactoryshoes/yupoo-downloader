@@ -296,7 +296,9 @@ def run_job(job_id, url, zip_name=None):
 
         custom_name = (zip_name or '').strip()
         if custom_name:
-            safe = re.sub(r'[^\w\s\-]', '', custom_name).strip().replace(' ', '_')
+            # Only strip characters that are truly illegal in filenames across all OS
+            # Keep: spaces, #, -, (, ), letters, numbers, dots, underscores
+            safe = re.sub(r'[<>:"/\\|?*]', '', custom_name).strip()
             final_zip_name = safe + '.zip'
         else:
             final_zip_name = 'yupoo_album_' + album_id + '.zip'
