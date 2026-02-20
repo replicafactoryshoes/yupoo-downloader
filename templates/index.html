@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Yupoo Album Downloader</title>
+  <title>Yupoo Downloader</title>
   <style>
     :root {
       --bg: #0f1117;
@@ -11,12 +11,15 @@
       --surface2: #22263a;
       --border: #2e3356;
       --accent: #5b6cf9;
-      --accent-glow: rgba(91, 108, 249, 0.3);
+      --accent-glow: rgba(91,108,249,0.25);
       --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.15);
       --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
       --yellow: #f59e0b;
       --text: #e2e8f0;
       --muted: #64748b;
+      --row-hover: #1e2235;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
@@ -24,61 +27,75 @@
       color: var(--text);
       font-family: 'Segoe UI', system-ui, sans-serif;
       min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
+      padding: 32px 24px;
     }
-    .container { width: 100%; max-width: 660px; }
+    .page { max-width: 900px; margin: 0 auto; }
+
+    /* Header */
     .header { text-align: center; margin-bottom: 36px; }
     .logo {
-      width: 64px; height: 64px;
+      width: 60px; height: 60px;
       background: linear-gradient(135deg, var(--accent), #8b5cf6);
-      border-radius: 18px;
+      border-radius: 16px;
       display: flex; align-items: center; justify-content: center;
-      margin: 0 auto 20px;
-      font-size: 30px;
-      box-shadow: 0 0 30px var(--accent-glow);
+      margin: 0 auto 16px;
+      font-size: 28px;
+      box-shadow: 0 0 28px var(--accent-glow);
     }
     h1 {
-      font-size: 28px; font-weight: 700;
+      font-size: 26px; font-weight: 700;
       background: linear-gradient(135deg, #fff 40%, var(--accent));
       -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-      background-clip: text; margin-bottom: 8px;
+      background-clip: text; margin-bottom: 6px;
     }
-    .subtitle { color: var(--muted); font-size: 14px; }
+    .subtitle { color: var(--muted); font-size: 13px; }
 
+    /* Card */
     .card {
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 16px;
-      padding: 24px;
+      padding: 20px;
       margin-bottom: 16px;
     }
 
-    .field-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+    /* Column headers */
+    .col-headers {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr 36px;
+      gap: 8px;
+      padding: 0 4px 8px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 6px;
+    }
+    .col-header {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.06em;
       color: var(--muted);
-      margin-bottom: 7px;
     }
 
-    .input-row {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 14px;
+    /* Rows */
+    .rows-container { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1.6fr 36px;
+      gap: 8px;
+      align-items: center;
+      padding: 4px;
+      border-radius: 10px;
+      transition: background 0.15s;
     }
+    .row:hover { background: var(--row-hover); }
 
     input[type="text"] {
-      flex: 1;
+      width: 100%;
       background: var(--bg);
       border: 1.5px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 15px;
+      border-radius: 8px;
+      padding: 10px 12px;
       color: var(--text);
-      font-size: 14px;
+      font-size: 13px;
       outline: none;
       transition: border-color 0.2s, box-shadow 0.2s;
     }
@@ -87,312 +104,410 @@
       box-shadow: 0 0 0 3px var(--accent-glow);
     }
     input[type="text"]::placeholder { color: var(--muted); }
+    input[type="text"].has-error { border-color: var(--red); }
 
-    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+    .remove-btn {
+      width: 32px; height: 32px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 16px; line-height: 1;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.15s;
+      padding: 0;
+    }
+    .remove-btn:hover { border-color: var(--red); color: var(--red); background: var(--red-dim); box-shadow: none; }
 
-    button {
-      background: var(--accent); color: #fff;
-      border: none; border-radius: 10px;
-      padding: 12px 20px;
+    /* Add row / actions */
+    .actions-row {
+      display: flex; gap: 10px; align-items: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
+    .add-btn {
+      background: none;
+      border: 1.5px dashed var(--border);
+      color: var(--muted);
+      border-radius: 8px;
+      padding: 9px 16px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.15s;
+      flex: 1;
+    }
+    .add-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); box-shadow: none; }
+
+    .start-btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 24px;
       font-size: 14px; font-weight: 600;
-      cursor: pointer; transition: all 0.2s;
+      cursor: pointer;
+      transition: all 0.2s;
       white-space: nowrap;
     }
-    button:hover:not(:disabled) {
-      background: #6b7cf9;
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .start-btn:hover:not(:disabled) { background: #6b7cf9; box-shadow: 0 0 18px var(--accent-glow); }
+    .start-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-    .btn-full { width: 100%; padding: 13px; font-size: 15px; }
-
-    .hint { color: var(--muted); font-size: 12px; }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 10px; }
     .check { color: var(--green); }
     .cross { color: var(--red); }
 
-    /* Progress */
-    .progress-card { display: none; }
-    .progress-card.visible { display: block; }
+    /* Results section */
+    .results-section { display: none; }
+    .results-section.visible { display: block; }
 
-    .status-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-    .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .status-dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
-    .status-dot.done { background: var(--green); }
-    .status-dot.error { background: var(--red); }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 var(--accent-glow); }
-      50% { opacity: 0.7; box-shadow: 0 0 0 6px transparent; }
+    .results-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
     }
+    .results-title { font-size: 14px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .results-summary { font-size: 13px; color: var(--muted); }
 
-    .status-message { font-size: 14px; color: var(--text); flex: 1; }
-    .progress-track { background: var(--bg); border-radius: 999px; height: 8px; overflow: hidden; margin-bottom: 10px; }
+    /* Job cards */
+    .job-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 10px;
+      transition: border-color 0.2s;
+    }
+    .job-card.done { border-color: rgba(34,197,94,0.3); }
+    .job-card.error { border-color: rgba(239,68,68,0.3); }
+
+    .job-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .job-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .job-dot.running { background: var(--accent); animation: pulse 1.2s infinite; }
+    .job-dot.done { background: var(--green); }
+    .job-dot.error { background: var(--red); }
+    .job-dot.waiting { background: var(--muted); }
+
+    .job-name { font-size: 14px; font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-status { font-size: 12px; color: var(--muted); }
+
+    .job-url { font-size: 11px; color: var(--muted); font-family: monospace; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .progress-track { background: var(--bg); border-radius: 999px; height: 6px; overflow: hidden; margin-bottom: 6px; }
     .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), #8b5cf6); border-radius: 999px; transition: width 0.4s ease; width: 0%; }
-    .progress-fill.indeterminate { width: 40%; animation: indeterminate 1.4s infinite ease-in-out; }
-    @keyframes indeterminate { 0% { transform: translateX(-100%); } 100% { transform: translateX(350%); } }
+    .progress-fill.indeterminate { width: 35%; animation: indeterminate 1.4s infinite ease-in-out; }
 
-    .progress-label { font-size: 12px; color: var(--muted); text-align: right; }
-
-    .download-btn {
-      width: 100%; background: linear-gradient(135deg, var(--green), #16a34a);
-      border-radius: 10px; padding: 15px; font-size: 15px;
-      display: none; align-items: center; justify-content: center; gap: 8px; margin-top: 16px;
+    @keyframes indeterminate { 0% { transform: translateX(-200%); } 100% { transform: translateX(500%); } }
+    @keyframes pulse {
+      0%,100% { opacity:1; box-shadow: 0 0 0 0 var(--accent-glow); }
+      50% { opacity:.7; box-shadow: 0 0 0 5px transparent; }
     }
-    .download-btn.visible { display: flex; }
-    .download-btn:hover { background: linear-gradient(135deg, #16a34a, #15803d); box-shadow: 0 0 25px rgba(34,197,94,0.3); }
 
-    .error-msg {
-      background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
-      border-radius: 10px; padding: 14px; color: #fca5a5;
-      font-size: 13px; display: none; margin-top: 12px;
+    .job-footer { display: flex; align-items: center; justify-content: space-between; }
+    .job-msg { font-size: 12px; color: var(--muted); flex: 1; }
+    .job-stats { font-size: 12px; color: var(--muted); }
+
+    .dl-btn {
+      background: linear-gradient(135deg, var(--green), #16a34a);
+      color: #fff; border: none; border-radius: 7px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.2s;
+      white-space: nowrap; margin-left: 10px;
     }
-    .error-msg.visible { display: block; }
+    .dl-btn:hover { box-shadow: 0 0 18px rgba(34,197,94,0.35); }
 
-    .stats { display: flex; gap: 12px; margin-top: 14px; }
-    .stat { flex: 1; background: var(--bg); border-radius: 10px; padding: 12px; text-align: center; }
-    .stat-value { font-size: 22px; font-weight: 700; color: var(--accent); }
-    .stat-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .err-text { font-size: 12px; color: #fca5a5; margin-top: 6px; }
 
-    /* Debug panel */
-    .debug-toggle {
-      background: none; border: 1px solid var(--border);
-      color: var(--muted); font-size: 12px;
-      padding: 7px 14px; border-radius: 8px;
-      margin-top: 8px; cursor: pointer;
-    }
-    .debug-toggle:hover { border-color: var(--accent); color: var(--accent); background: none; box-shadow: none; }
-
-    .debug-panel {
-      display: none; margin-top: 12px;
-      background: var(--bg); border: 1px solid var(--border);
-      border-radius: 10px; padding: 14px;
-    }
-    .debug-panel.visible { display: block; }
-    .debug-panel h4 { font-size: 12px; color: var(--muted); margin-bottom: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
-    .debug-urls {
-      max-height: 300px; overflow-y: auto;
-      font-size: 11px; font-family: monospace;
-      color: #94a3b8; line-height: 1.8;
-    }
-    .debug-urls a { color: #818cf8; text-decoration: none; }
-    .debug-urls a:hover { text-decoration: underline; }
-    .debug-loading { color: var(--muted); font-size: 13px; font-style: italic; }
-
+    /* Tips */
     .tips {
       background: var(--surface2); border: 1px solid var(--border);
-      border-radius: 12px; padding: 16px 20px;
+      border-radius: 12px; padding: 14px 18px; margin-top: 16px;
     }
-    .tips h3 { font-size: 13px; font-weight: 600; color: var(--muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
-    .tips ul { list-style: none; display: flex; flex-direction: column; gap: 6px; }
-    .tips li { font-size: 13px; color: #94a3b8; display: flex; align-items: flex-start; gap: 8px; }
-    .tips li::before { content: 'x2192'; color: var(--accent); flex-shrink: 0; }
+    .tips h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tips ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+    .tips li { font-size: 12px; color: #94a3b8; padding-left: 14px; position: relative; }
+    .tips li::before { content: '&#8594;'; position: absolute; left: 0; color: var(--accent); }
   </style>
 </head>
 <body>
-<div class="container">
+<div class="page">
+
   <div class="header">
     <div class="logo">&#128230;</div>
     <h1>Yupoo Downloader</h1>
-    <p class="subtitle">Download all images from any Yupoo album as a ZIP file</p>
+    <p class="subtitle">Paste multiple album links and download all ZIPs in parallel</p>
   </div>
 
+  <!-- Input card -->
   <div class="card">
-    <div class="field-label">Album URL</div>
-    <div class="input-row">
-      <input type="text" id="urlInput"
-        placeholder="https://store.x.yupoo.com/albums/123456789?uid=1"
-        autocomplete="off" spellcheck="false" />
+    <div class="col-headers">
+      <div class="col-header">Album URL</div>
+      <div class="col-header">ZIP File Name</div>
+      <div></div>
     </div>
 
-    <div class="two-col">
-      <div>
-        <div class="field-label">ZIP File Name (optional)</div>
-        <input type="text" id="zipName" placeholder="e.g. Nike_Air_Max_Blue" autocomplete="off" spellcheck="false" />
-      </div>
-      <div style="display:flex; flex-direction:column; justify-content:flex-end;">
-        <button class="btn-full" id="startBtn" onclick="startDownload()">&#8595; Download</button>
-      </div>
+    <div class="rows-container" id="rowsContainer"></div>
+
+    <div class="actions-row">
+      <button class="add-btn" onclick="addRow()">+ Add another link</button>
+      <button class="start-btn" id="startBtn" onclick="startAll()">&#8595; Download All</button>
     </div>
 
     <p class="hint">
-      <span class="check">&#10003; Use album links</span> &nbsp;&middot;&nbsp;
-      <span class="cross">&#10007; Don't use category/store links</span>
+      <span class="check">&#10003; Use direct album links (/albums/)</span>
+      &nbsp;&middot;&nbsp;
+      <span class="cross">&#10007; Don't use category or store pages</span>
     </p>
   </div>
 
-  <div class="card progress-card" id="progressCard">
-    <div class="status-bar">
-      <div class="status-dot running" id="statusDot"></div>
-      <div class="status-message" id="statusMsg">Starting...</div>
+  <!-- Results -->
+  <div class="results-section" id="resultsSection">
+    <div class="results-header">
+      <div class="results-title">Downloads</div>
+      <div class="results-summary" id="resultsSummary"></div>
     </div>
-
-    <div class="progress-track">
-      <div class="progress-fill indeterminate" id="progressFill"></div>
-    </div>
-    <div class="progress-label" id="progressLabel"></div>
-
-    <div class="stats" id="statsRow" style="display:none">
-      <div class="stat"><div class="stat-value" id="statDownloaded">0</div><div class="stat-label">Downloaded</div></div>
-      <div class="stat"><div class="stat-value" id="statTotal">0</div><div class="stat-label">Total Images</div></div>
-      <div class="stat"><div class="stat-value" id="statFailed">0</div><div class="stat-label">Failed</div></div>
-    </div>
-
-    <div class="error-msg" id="errorMsg"></div>
-    <button class="download-btn" id="downloadBtn">&#11015;&#65039; Save ZIP to Computer</button>
-
-    <!-- Debug panel -->
-    <button class="debug-toggle" id="debugToggle" onclick="toggleDebug()">&#128269; Inspect collected URLs</button>
-    <div class="debug-panel" id="debugPanel">
-      <h4 id="debugTitle">URLs collected by the scraper</h4>
-      <div class="debug-urls" id="debugUrls"><span class="debug-loading">Loading...</span></div>
-    </div>
+    <div id="jobCards"></div>
   </div>
 
   <div class="tips">
     <h3>How to use</h3>
     <ul>
-      <li>Go to a Yupoo store and open a specific product album</li>
-      <li>Copy the album URL (must contain /albums/)</li>
-      <li>Optionally type a name for the ZIP file</li>
-      <li>Click Download and wait, then save the ZIP</li>
+      <li>Paste one or more Yupoo album URLs — each must contain <code>/albums/</code></li>
+      <li>Give each ZIP a name (optional — defaults to album ID)</li>
+      <li>Click Download All — all jobs run at the same time</li>
+      <li>Save each ZIP as it finishes — no need to wait for others</li>
     </ul>
   </div>
 </div>
 
 <script>
-  let currentJobId = null;
-  let pollInterval = null;
-  let debugOpen = false;
+  // ── State ──────────────────────────────────────────────────────────────────
+  let rowCount = 0;
+  const jobs = {}; // jobId -> { url, name, status, ... }
+  let pollTimer = null;
 
-  async function startDownload() {
-    const url = document.getElementById('urlInput').value.trim();
-    const zipName = document.getElementById('zipName').value.trim();
-    if (!url) { alert('Please enter a Yupoo album URL'); return; }
+  // ── Row management ─────────────────────────────────────────────────────────
+  function addRow(url = '', name = '') {
+    rowCount++;
+    const id = 'row-' + rowCount;
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.id = id;
+    div.innerHTML =
+      '<input type="text" class="url-input" placeholder="https://store.x.yupoo.com/albums/123456789" value="' + escHtml(url) + '" autocomplete="off" spellcheck="false" />' +
+      '<input type="text" class="name-input" placeholder="e.g. Nike_Air_Max" value="' + escHtml(name) + '" autocomplete="off" spellcheck="false" />' +
+      '<button class="remove-btn" onclick="removeRow(\'' + id + '\')" title="Remove">&#215;</button>';
+    document.getElementById('rowsContainer').appendChild(div);
+    return div;
+  }
 
-    clearInterval(pollInterval);
-    currentJobId = null;
+  function removeRow(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+    // Always keep at least 1 row
+    if (document.querySelectorAll('.row').length === 0) addRow();
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // ── Start all downloads ────────────────────────────────────────────────────
+  async function startAll() {
+    const rows = document.querySelectorAll('.row');
+    const items = [];
+    let hasError = false;
+
+    rows.forEach(row => {
+      const urlEl = row.querySelector('.url-input');
+      const nameEl = row.querySelector('.name-input');
+      const url = urlEl.value.trim();
+      const name = nameEl.value.trim();
+      urlEl.classList.remove('has-error');
+
+      if (!url) return; // skip empty rows
+
+      if (!url.includes('yupoo.com/albums/')) {
+        urlEl.classList.add('has-error');
+        hasError = true;
+        return;
+      }
+      items.push({ url, name });
+    });
+
+    if (hasError) { alert('One or more URLs are invalid. They must contain /albums/'); return; }
+    if (items.length === 0) { alert('Please enter at least one album URL.'); return; }
+
     document.getElementById('startBtn').disabled = true;
-    document.getElementById('progressCard').classList.add('visible');
-    document.getElementById('downloadBtn').classList.remove('visible');
-    document.getElementById('errorMsg').classList.remove('visible');
-    document.getElementById('statsRow').style.display = 'none';
-    document.getElementById('debugPanel').classList.remove('visible');
-    document.getElementById('debugUrls').innerHTML = '<span class="debug-loading">Loading...</span>';
-    debugOpen = false;
+    document.getElementById('resultsSection').classList.add('visible');
+    document.getElementById('jobCards').innerHTML = '';
+    Object.keys(jobs).forEach(k => delete jobs[k]);
 
-    const dot = document.getElementById('statusDot');
-    dot.className = 'status-dot running';
-    const fill = document.getElementById('progressFill');
-    fill.className = 'progress-fill indeterminate';
-    fill.style.width = '';
-    setStatus('Starting download job...');
+    // Start all jobs in parallel
+    await Promise.all(items.map(item => startJob(item.url, item.name)));
+
+    // Begin polling
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollAll, 1200);
+    pollAll();
+  }
+
+  async function startJob(url, name) {
+    // Create card immediately in "waiting" state
+    const cardId = 'job-' + Date.now() + '-' + Math.random().toString(36).slice(2);
+    const displayName = name || albumIdFromUrl(url) || url;
+
+    jobs[cardId] = { url, name: displayName, jobId: null, status: 'waiting' };
+    createJobCard(cardId, displayName, url);
 
     try {
       const res = await fetch('/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, zip_name: zipName })
+        body: JSON.stringify({ url, zip_name: name })
       });
       const data = await res.json();
-      if (!res.ok) { showError(data.error || 'Failed to start'); return; }
-      currentJobId = data.job_id;
-      pollInterval = setInterval(pollStatus, 1200);
-      pollStatus();
-    } catch (e) {
-      showError('Could not connect to server.');
-      document.getElementById('startBtn').disabled = false;
-    }
-  }
-
-  async function pollStatus() {
-    if (!currentJobId) return;
-    try {
-      const res = await fetch('/status/' + currentJobId);
-      const data = await res.json();
-      setStatus(data.message);
-
-      if (data.total > 0) {
-        document.getElementById('statsRow').style.display = 'flex';
-        document.getElementById('statDownloaded').textContent = data.downloaded;
-        document.getElementById('statTotal').textContent = data.total;
-        document.getElementById('statFailed').textContent = data.failed;
-        const pct = Math.round((data.downloaded / data.total) * 100);
-        const fill = document.getElementById('progressFill');
-        fill.className = 'progress-fill';
-        fill.style.width = pct + '%';
-        document.getElementById('progressLabel').textContent = pct + '%';
-      }
-
-      if (data.status === 'done') {
-        clearInterval(pollInterval);
-        document.getElementById('statusDot').className = 'status-dot done';
-        const btn = document.getElementById('downloadBtn');
-        btn.classList.add('visible');
-        btn.onclick = () => { window.location.href = '/download/' + currentJobId; };
-        document.getElementById('startBtn').disabled = false;
-        const fill = document.getElementById('progressFill');
-        fill.className = 'progress-fill';
-        fill.style.width = '100%';
-        document.getElementById('progressLabel').textContent = '100%';
-        // Auto-load debug URLs
-        loadDebugUrls();
-      }
-
-      if (data.status === 'error') {
-        clearInterval(pollInterval);
-        showError(data.message);
-        document.getElementById('startBtn').disabled = false;
-        loadDebugUrls();
-      }
-    } catch(e) {}
-  }
-
-  async function toggleDebug() {
-    debugOpen = !debugOpen;
-    const panel = document.getElementById('debugPanel');
-    if (debugOpen) {
-      panel.classList.add('visible');
-      loadDebugUrls();
-    } else {
-      panel.classList.remove('visible');
-    }
-  }
-
-  async function loadDebugUrls() {
-    if (!currentJobId) return;
-    try {
-      const res = await fetch('/status/' + currentJobId);
-      const data = await res.json();
-      const urls = data.raw_urls || [];
-      const container = document.getElementById('debugUrls');
-      const title = document.getElementById('debugTitle');
-      title.textContent = urls.length + ' unique URLs collected by scraper';
-      if (urls.length === 0) {
-        container.innerHTML = '<span class="debug-loading">No URLs collected yet.</span>';
+      if (!res.ok || data.error) {
+        setJobError(cardId, data.error || 'Failed to start');
         return;
       }
-      container.innerHTML = urls.map((u, i) =>
-        '<div>' + (i+1) + '. <a href="' + u + '" target="_blank">' + u + '</a></div>'
-      ).join('');
-    } catch(e) {}
+      jobs[cardId].jobId = data.job_id;
+      setJobDot(cardId, 'running');
+    } catch(e) {
+      setJobError(cardId, 'Could not connect to server');
+    }
   }
 
-  function setStatus(msg) { document.getElementById('statusMsg').textContent = msg; }
+  function albumIdFromUrl(url) {
+    const m = url.match(/\/albums\/(\d+)/);
+    return m ? 'album_' + m[1] : null;
+  }
 
-  function showError(msg) {
-    const el = document.getElementById('errorMsg');
-    el.textContent = msg;
-    el.classList.add('visible');
-    document.getElementById('statusDot').className = 'status-dot error';
-    setStatus('Failed');
-    const fill = document.getElementById('progressFill');
+  // ── Job cards ──────────────────────────────────────────────────────────────
+  function createJobCard(cardId, name, url) {
+    const card = document.createElement('div');
+    card.className = 'job-card';
+    card.id = 'card-' + cardId;
+    card.innerHTML =
+      '<div class="job-header">' +
+        '<div class="job-dot waiting" id="dot-' + cardId + '"></div>' +
+        '<div class="job-name">' + escHtml(name) + '.zip</div>' +
+        '<div class="job-status" id="status-label-' + cardId + '">Waiting...</div>' +
+      '</div>' +
+      '<div class="job-url">' + escHtml(url) + '</div>' +
+      '<div class="progress-track"><div class="progress-fill indeterminate" id="fill-' + cardId + '"></div></div>' +
+      '<div class="job-footer">' +
+        '<div class="job-msg" id="msg-' + cardId + '">Queued</div>' +
+        '<div class="job-stats" id="stats-' + cardId + '"></div>' +
+        '<button class="dl-btn" id="dl-' + cardId + '" style="display:none" onclick="triggerDownload(\'' + cardId + '\')">&#11015; Save ZIP</button>' +
+      '</div>' +
+      '<div class="err-text" id="err-' + cardId + '" style="display:none"></div>';
+    document.getElementById('jobCards').appendChild(card);
+  }
+
+  function setJobDot(cardId, state) {
+    const dot = document.getElementById('dot-' + cardId);
+    if (dot) dot.className = 'job-dot ' + state;
+    const card = document.getElementById('card-' + cardId);
+    if (card) {
+      card.classList.remove('done','error');
+      if (state === 'done') card.classList.add('done');
+      if (state === 'error') card.classList.add('error');
+    }
+  }
+
+  function setJobError(cardId, msg) {
+    jobs[cardId].status = 'error';
+    setJobDot(cardId, 'error');
+    document.getElementById('msg-' + cardId).textContent = 'Failed';
+    document.getElementById('status-label-' + cardId).textContent = 'Error';
+    const errEl = document.getElementById('err-' + cardId);
+    errEl.textContent = msg;
+    errEl.style.display = 'block';
+    const fill = document.getElementById('fill-' + cardId);
     fill.className = 'progress-fill';
     fill.style.width = '0%';
+    updateSummary();
   }
 
-  document.getElementById('urlInput').addEventListener('keydown', e => {
-    if (e.key === 'Enter') startDownload();
-  });
+  function triggerDownload(cardId) {
+    const job = jobs[cardId];
+    if (job && job.jobId) {
+      window.location.href = '/download/' + job.jobId;
+    }
+  }
+
+  // ── Polling ────────────────────────────────────────────────────────────────
+  async function pollAll() {
+    let allDone = true;
+
+    for (const [cardId, job] of Object.entries(jobs)) {
+      if (job.status === 'done' || job.status === 'error') continue;
+      if (!job.jobId) { allDone = false; continue; }
+
+      allDone = false;
+      try {
+        const res = await fetch('/status/' + job.jobId);
+        const data = await res.json();
+        updateJobCard(cardId, data);
+      } catch(e) {}
+    }
+
+    if (allDone) {
+      clearInterval(pollTimer);
+      document.getElementById('startBtn').disabled = false;
+    }
+    updateSummary();
+  }
+
+  function updateJobCard(cardId, data) {
+    const job = jobs[cardId];
+    if (!job) return;
+
+    document.getElementById('msg-' + cardId).textContent = data.message || '';
+    document.getElementById('status-label-' + cardId).textContent = capitalise(data.status);
+
+    const fill = document.getElementById('fill-' + cardId);
+
+    if (data.total > 0) {
+      const pct = Math.round((data.downloaded / data.total) * 100);
+      fill.className = 'progress-fill';
+      fill.style.width = pct + '%';
+      document.getElementById('stats-' + cardId).textContent = data.downloaded + ' / ' + data.total + ' images';
+    }
+
+    if (data.status === 'done') {
+      job.status = 'done';
+      setJobDot(cardId, 'done');
+      fill.className = 'progress-fill';
+      fill.style.width = '100%';
+      document.getElementById('stats-' + cardId).textContent = data.downloaded + ' images';
+      const dlBtn = document.getElementById('dl-' + cardId);
+      dlBtn.style.display = 'inline-block';
+    }
+
+    if (data.status === 'error') {
+      setJobError(cardId, data.message);
+    }
+  }
+
+  function updateSummary() {
+    const total = Object.keys(jobs).length;
+    const done = Object.values(jobs).filter(j => j.status === 'done').length;
+    const errors = Object.values(jobs).filter(j => j.status === 'error').length;
+    let text = done + ' / ' + total + ' complete';
+    if (errors > 0) text += ' (' + errors + ' failed)';
+    document.getElementById('resultsSummary').textContent = text;
+  }
+
+  function capitalise(s) {
+    if (!s) return '';
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+
+  // ── Init: start with 3 empty rows ─────────────────────────────────────────
+  addRow();
+  addRow();
+  addRow();
 </script>
 </body>
 </html>
